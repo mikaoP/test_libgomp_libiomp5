@@ -1,0 +1,4 @@
+- do for chunk version. i think intel version would be interesting
+- why __kmpc_dispatch_fini_4 is not used in dynamic loops? where is it used?
+- what ident must be used for each case?
+
