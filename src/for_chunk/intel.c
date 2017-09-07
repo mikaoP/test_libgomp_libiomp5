@@ -16,7 +16,7 @@ static void outline_func(kmp_int32 *global_tid, kmp_int32 *bound_tid, ...) {
 	kmp_int32 upper = N - 1;
 	kmp_int32 stride = 1; // clang sets to 1, but i do not know why...
 	kmp_int32 incr = 1;
-	kmp_int32 chunk = 3; // Not used in this sched
+	kmp_int32 chunk = 3;
 
 	__kmpc_for_static_init_4(&loc1, *global_tid, sched, &liter, &lower, &upper, &stride, incr, chunk);
 //	printf("%d, %d, %d, %d\n", liter, lower, upper, stride);

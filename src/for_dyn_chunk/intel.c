@@ -14,7 +14,7 @@ static void outline_func(kmp_int32 *global_tid, kmp_int32 *bound_tid, ...) {
 	kmp_int32 lower = 0;
 	kmp_int32 upper = N - 1;
 	kmp_int32 incr = 1;
-	kmp_int32 chunk = 3; // clang compiles to this by default
+	kmp_int32 chunk = 3;
 
 	__kmpc_dispatch_init_4(&loc1, *global_tid, sched, lower, upper, incr, chunk);
 	while (__kmpc_dispatch_next_4(&loc1, *global_tid, &liter, &lower, &upper, &incr)) {

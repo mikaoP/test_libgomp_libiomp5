@@ -6,6 +6,8 @@
 typedef int kmp_int32;
 typedef void (*kmpc_micro)              ( kmp_int32 * global_tid, kmp_int32 * bound_tid, ... );
 
+typedef kmp_int32 kmp_critical_name[8];
+
 /*! Use trampoline for internal microtasks */
 #define KMP_IDENT_IMB             0x01
 /*! Use c-style ident structure */
@@ -163,5 +165,25 @@ KMP_EXPORT void __kmpc_dispatch_init_4( ident_t *loc, kmp_int32 gtid,
 KMP_EXPORT void __kmpc_dispatch_fini_4( ident_t *loc, kmp_int32 gtid );
 KMP_EXPORT int __kmpc_dispatch_next_4( ident_t *loc, kmp_int32 gtid,
     kmp_int32 *p_last, kmp_int32 *p_lb, kmp_int32 *p_ub, kmp_int32 *p_st );
+
+/*
+ * Interface to fast scalable reduce methods routines
+ */
+
+KMP_EXPORT kmp_int32 __kmpc_reduce_nowait( ident_t *loc, kmp_int32 global_tid,
+                                           kmp_int32 num_vars, size_t reduce_size,
+                                           void *reduce_data, void (*reduce_func)(void *lhs_data, void *rhs_data),
+                                           kmp_critical_name *lck );
+KMP_EXPORT void __kmpc_end_reduce_nowait( ident_t *loc, kmp_int32 global_tid, kmp_critical_name *lck );
+KMP_EXPORT kmp_int32 __kmpc_reduce( ident_t *loc, kmp_int32 global_tid,
+                                    kmp_int32 num_vars, size_t reduce_size,
+                                    void *reduce_data, void (*reduce_func)(void *lhs_data, void *rhs_data),
+                                    kmp_critical_name *lck );
+KMP_EXPORT void __kmpc_end_reduce( ident_t *loc, kmp_int32 global_tid, kmp_critical_name *lck );
+
+// 4-byte add / sub fixed
+void __kmpc_atomic_fixed4_add(  ident_t *id_ref, int gtid, kmp_int32 * lhs, kmp_int32 rhs );
+void __kmpc_atomic_fixed4_sub(  ident_t *id_ref, int gtid, kmp_int32 * lhs, kmp_int32 rhs );
+
 #endif // libiomp_h_INCLUDED
 

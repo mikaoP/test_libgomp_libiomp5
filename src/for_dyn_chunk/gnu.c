@@ -14,7 +14,7 @@ static void function(void *dummy)
 	long incr = 1;
 	long chunk = 3;
 	long _start, _end;
-	// gcc sets chunk to 1 by default ??
+
 	if (GOMP_loop_dynamic_start(start, end, incr, chunk, &_start, &_end)) {
 		do {
 			for (size_t i = _start; i < _end; i += incr) {
