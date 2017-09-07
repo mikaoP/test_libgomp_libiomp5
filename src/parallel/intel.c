@@ -11,7 +11,7 @@ int main(void) {
 	ident_t loc1;
 	kmp_int32 gtid;
 
-	__kmpc_begin(&loc1, KMP_IDENT_KMPC);
+	__kmpc_begin(&loc1, 0); // flags is currently ignored
 
 	// Not necessary in this example
 	gtid = __kmpc_global_thread_num(&loc1);

@@ -32,7 +32,7 @@ static void outline_func(kmp_int32 *global_tid, kmp_int32 *bound_tid, ...) {
 int main(void) {
 	kmp_int32 gtid;
 
-	__kmpc_begin(&loc1, KMP_IDENT_KMPC);
+	__kmpc_begin(&loc1, 0); // flags is currently ignored
 
 	__kmpc_fork_call(&loc1, 0, outline_func);
 
