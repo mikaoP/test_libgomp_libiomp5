@@ -13,3 +13,7 @@ $(OBJECTS_INTEL): % : %.c
 
 $(OBJECTS_GNU): % : %.c
 	gcc $(CFLAGS) -Iinclude -fopenmp $< -o $@
+
+clean:
+	find src/ -type f -executable -delete
+	find test/ -type f -executable -delete
