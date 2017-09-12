@@ -184,6 +184,9 @@ KMP_EXPORT void __kmpc_end_reduce( ident_t *loc, kmp_int32 global_tid, kmp_criti
 KMP_EXPORT kmp_int32  __kmpc_single         ( ident_t *, kmp_int32 global_tid );
 KMP_EXPORT void   __kmpc_end_single         ( ident_t *, kmp_int32 global_tid );
 
+KMP_EXPORT void   __kmpc_critical           ( ident_t *, kmp_int32 global_tid, kmp_critical_name * );
+KMP_EXPORT void   __kmpc_end_critical       ( ident_t *, kmp_int32 global_tid, kmp_critical_name * );
+
 // 4-byte add / sub fixed
 void __kmpc_atomic_fixed4_add(  ident_t *id_ref, int gtid, kmp_int32 * lhs, kmp_int32 rhs );
 void __kmpc_atomic_fixed4_sub(  ident_t *id_ref, int gtid, kmp_int32 * lhs, kmp_int32 rhs );
