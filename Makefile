@@ -1,9 +1,9 @@
 CFLAGS  = -m32 -std=c11
 LDFLAGS = -Lintel_rt/lib
 LDLIBS  = -liomp5
-SOURCE_INTEL = $(shell find src -name "*intel*.c")
-SOURCE_GNU = $(shell find src -name "*gnu*.c")
-SOURCE_TEST = $(shell find test -name "*.c")
+SOURCE_INTEL = $(shell find src -name "intel.c")
+SOURCE_GNU = $(shell find src -name "gnu.c")
+SOURCE_TEST = $(shell find test -name "test*.c")
 
 OBJECTS_INTEL = $(SOURCE_INTEL:%.c=%)
 OBJECTS_GNU = $(SOURCE_GNU:%.c=%)
