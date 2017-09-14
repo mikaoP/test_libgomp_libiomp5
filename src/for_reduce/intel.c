@@ -34,6 +34,7 @@ static void outline_func(kmp_int32 *global_tid, kmp_int32 *bound_tid, size_t *su
 //	printf("%d, %d, %d, %d\n", liter, lower, upper, stride);
 	for (size_t i = lower; i <= upper; i += incr) {
 		local.sum += omp_get_thread_num();
+		usleep(100);
 	}
 	__kmpc_for_static_fini(&loc1, *global_tid);
 
@@ -45,11 +46,12 @@ static void outline_func(kmp_int32 *global_tid, kmp_int32 *bound_tid, size_t *su
 		break;
 	case 2:
 		__kmpc_atomic_fixed4_add(&loc3, *global_tid, sum, local.sum);
+		__kmpc_end_reduce(&loc3, *global_tid, &lock);
 		break;
 	default:
 		break;
 	}
-	__kmpc_barrier(&loc2, *global_tid);
+	printf("Thread #%d: %zu\n", omp_get_thread_num(), *sum);
 }
 
 
@@ -64,5 +66,4 @@ int main(void) {
 
 	__kmpc_end(&loc1);
 
-	printf("%zu\n", sum);
 }

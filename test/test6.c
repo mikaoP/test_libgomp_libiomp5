@@ -9,8 +9,11 @@ int main(void) {
 	size_t sum = 0;
 	#pragma omp parallel num_threads(8)
 	{
-		#pragma omp for reduction(+:sum)
-		for (size_t i = 0; i < N; i++) sum += omp_get_thread_num();
+		#pragma omp for reduction(+:sum) nowait
+		for (size_t i = 0; i < N; i++) {
+			sum += omp_get_thread_num();
+			usleep(100);
+		}
+		printf("Thread #%d: %zu\n", omp_get_thread_num(), sum);
 	}
-	printf("%zu\n", sum);
 }
