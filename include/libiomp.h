@@ -3,8 +3,11 @@
 
 #define KMP_EXPORT     extern  /* export declaration in guide libraries */
 
+typedef unsigned int kmp_uint32;
 typedef int kmp_int32;
 typedef void (*kmpc_micro)              ( kmp_int32 * global_tid, kmp_int32 * bound_tid, ... );
+
+typedef kmp_uint32 kmp_lock_flags_t;
 
 typedef kmp_int32 kmp_critical_name[8];
 
@@ -190,6 +193,231 @@ KMP_EXPORT void   __kmpc_end_critical       ( ident_t *, kmp_int32 global_tid, k
 // 4-byte add / sub fixed
 void __kmpc_atomic_fixed4_add(  ident_t *id_ref, int gtid, kmp_int32 * lhs, kmp_int32 rhs );
 void __kmpc_atomic_fixed4_sub(  ident_t *id_ref, int gtid, kmp_int32 * lhs, kmp_int32 rhs );
+
+struct kmp_base_ticket_lock {
+    // `initialized' must be the first entry in the lock data structure!
+    volatile union kmp_ticket_lock * initialized;  // points to the lock union if in initialized state
+    ident_t const *     location;     // Source code location of omp_init_lock().
+    volatile kmp_uint32 next_ticket;  // ticket number to give to next thread which acquires
+    volatile kmp_uint32 now_serving;  // ticket number for thread which holds the lock
+    volatile kmp_int32  owner_id;     // (gtid+1) of owning thread, 0 if unlocked
+    kmp_int32           depth_locked; // depth locked, for nested locks only
+    kmp_lock_flags_t    flags;        // lock specifics, e.g. critical section lock
+};
+
+typedef struct kmp_base_ticket_lock kmp_base_ticket_lock_t;
+
+/* Define the default size of the cache line */
+#ifndef CACHE_LINE
+    #define CACHE_LINE                  128         /* cache line size in bytes */
+#else
+    #if ( CACHE_LINE < 64 ) && ! defined( KMP_OS_DARWIN )
+        // 2006-02-13: This produces too many warnings on OS X*. Disable it for a while...
+        #warning CACHE_LINE is too small.
+    #endif
+#endif /* CACHE_LINE */
+
+# define KMP_ALIGN_CACHE      __attribute__((aligned(CACHE_LINE)))
+
+//
+// When a lock table is used, the indices are of kmp_lock_index_t
+//
+typedef kmp_uint32 kmp_lock_index_t;
+
+//
+// When memory allocated for locks are on the lock pool (free list),
+// it is treated as structs of this type.
+//
+struct kmp_lock_pool {
+    union kmp_user_lock *next;
+    kmp_lock_index_t index;
+};
+
+typedef struct kmp_lock_pool kmp_lock_pool_t;
+
+#define KMP_PAD(type, sz)     (sizeof(type) + (sz - ((sizeof(type) - 1) % (sz)) - 1))
+
+union KMP_ALIGN_CACHE kmp_ticket_lock {
+    kmp_base_ticket_lock_t lk;       // This field must be first to allow static initializing.
+    kmp_lock_pool_t pool;
+    double                 lk_align; // use worst case alignment
+    char                   lk_pad[ KMP_PAD( kmp_base_ticket_lock_t, CACHE_LINE ) ];
+};
+
+typedef union kmp_ticket_lock kmp_ticket_lock_t;
+
+typedef kmp_ticket_lock_t kmp_lock_t;
+
+typedef struct KMP_ALIGN_CACHE kmpc_aligned_queue_slot_t {
+    struct kmpc_thunk_t   *qs_thunk;
+} kmpc_aligned_queue_slot_t;
+
+/*
+ * OMP 3.0 tasking interface routines
+ */
+
+/* Defines for OpenMP 3.0 tasking and auto scheduling */
+
+# ifndef KMP_STATIC_STEAL_ENABLED
+#  define KMP_STATIC_STEAL_ENABLED 1
+# endif
+
+#define TASK_CURRENT_NOT_QUEUED  0
+#define TASK_CURRENT_QUEUED      1
+
+#ifdef BUILD_TIED_TASK_STACK
+#define TASK_STACK_EMPTY         0  // entries when the stack is empty
+
+#define TASK_STACK_BLOCK_BITS    5  // Used to define TASK_STACK_SIZE and TASK_STACK_MASK
+#define TASK_STACK_BLOCK_SIZE    ( 1 << TASK_STACK_BLOCK_BITS ) // Number of entries in each task stack array
+#define TASK_STACK_INDEX_MASK    ( TASK_STACK_BLOCK_SIZE - 1 )  // Mask for determining index into stack block
+#endif // BUILD_TIED_TASK_STACK
+
+#define TASK_NOT_PUSHED          1
+#define TASK_SUCCESSFULLY_PUSHED 0
+#define TASK_TIED                1
+#define TASK_UNTIED              0
+#define TASK_EXPLICIT            1
+#define TASK_IMPLICIT            0
+#define TASK_PROXY               1
+#define TASK_FULL                0
+
+#define KMP_CANCEL_THREADS
+#define KMP_THREAD_ATTR
+
+typedef kmp_int32 (* kmp_routine_entry_t)( kmp_int32, void * );
+
+#if OMP_40_ENABLED || OMP_45_ENABLED
+typedef union kmp_cmplrdata {
+#if OMP_45_ENABLED
+    kmp_int32           priority;           /**< priority specified by user for the task */
+#endif // OMP_45_ENABLED
+#if OMP_40_ENABLED
+    kmp_routine_entry_t destructors;        /* pointer to function to invoke deconstructors of firstprivate C++ objects */
+#endif // OMP_40_ENABLED
+    /* future data */
+} kmp_cmplrdata_t;
+#endif
+
+typedef struct kmpc_task_queue_t {
+        /* task queue linkage fields for n-ary tree of queues (locked with global taskq_tree_lck) */
+    kmp_lock_t                    tq_link_lck;          /*  lock for child link, child next/prev links and child ref counts */
+    union {
+        struct kmpc_task_queue_t *tq_parent;            /*  pointer to parent taskq, not locked */
+        struct kmpc_task_queue_t *tq_next_free;         /*  for taskq internal freelists, locked with global taskq_freelist_lck */
+    } tq;
+    volatile struct kmpc_task_queue_t *tq_first_child;  /*  pointer to linked-list of children, locked by tq's tq_link_lck */
+    struct kmpc_task_queue_t     *tq_next_child;        /*  next child in linked-list, locked by parent tq's tq_link_lck */
+    struct kmpc_task_queue_t     *tq_prev_child;        /*  previous child in linked-list, locked by parent tq's tq_link_lck */
+    volatile kmp_int32            tq_ref_count;         /*  reference count of threads with access to this task queue */
+                                                        /*  (other than the thread executing the kmpc_end_taskq call) */
+                                                        /*  locked by parent tq's tq_link_lck */
+
+        /* shared data for task queue */
+    struct kmpc_aligned_shared_vars_t    *tq_shareds;   /*  per-thread array of pointers to shared variable structures */
+                                                        /*  only one array element exists for all but outermost taskq */
+
+        /* bookkeeping for ordered task queue */
+    kmp_uint32                    tq_tasknum_queuing;   /*  ordered task number assigned while queuing tasks */
+    volatile kmp_uint32           tq_tasknum_serving;   /*  ordered number of next task to be served (executed) */
+
+        /* thunk storage management for task queue */
+    kmp_lock_t                    tq_free_thunks_lck;   /*  lock for thunk freelist manipulation */
+    struct kmpc_thunk_t          *tq_free_thunks;       /*  thunk freelist, chained via th.th_next_free  */
+    struct kmpc_thunk_t          *tq_thunk_space;       /*  space allocated for thunks for this task queue  */
+
+        /* data fields for queue itself */
+    kmp_lock_t                    tq_queue_lck;         /*  lock for [de]enqueue operations: tq_queue, tq_head, tq_tail, tq_nfull */
+    kmpc_aligned_queue_slot_t    *tq_queue;             /*  array of queue slots to hold thunks for tasks */
+    volatile struct kmpc_thunk_t *tq_taskq_slot;        /*  special slot for taskq task thunk, occupied if not NULL  */
+    kmp_int32                     tq_nslots;            /*  # of tq_thunk_space thunks alloc'd (not incl. tq_taskq_slot space)  */
+    kmp_int32                     tq_head;              /*  enqueue puts next item in here (index into tq_queue array) */
+    kmp_int32                     tq_tail;              /*  dequeue takes next item out of here (index into tq_queue array) */
+    volatile kmp_int32            tq_nfull;             /*  # of occupied entries in task queue right now  */
+    kmp_int32                     tq_hiwat;             /*  high-water mark for tq_nfull and queue scheduling  */
+    volatile kmp_int32            tq_flags;             /*  TQF_xxx  */
+
+        /* bookkeeping for outstanding thunks */
+    struct kmpc_aligned_int32_t  *tq_th_thunks;         /*  per-thread array for # of regular thunks currently being executed */
+    kmp_int32                     tq_nproc;             /*  number of thunks in the th_thunks array */
+
+        /* statistics library bookkeeping */
+    ident_t                       *tq_loc;              /*  source location information for taskq directive */
+} kmpc_task_queue_t;
+
+/*  sizeof_kmp_task_t passed as arg to kmpc_omp_task call  */
+typedef struct kmp_task {                   /* GEH: Shouldn't this be aligned somehow? */
+    void *              shareds;            /**< pointer to block of pointers to shared vars   */
+    kmp_routine_entry_t routine;            /**< pointer to routine to call for executing task */
+    kmp_int32           part_id;            /**< part id for the task                          */
+#if OMP_40_ENABLED || OMP_45_ENABLED
+    kmp_cmplrdata_t data1;                  /* Two known optional additions: destructors and priority */
+    kmp_cmplrdata_t data2;                  /* Process destructors first, priority second */
+    /* future data */
+#endif
+    /*  private vars  */
+} kmp_task_t;
+
+/*  sizeof_shareds passed as arg to __kmpc_taskq call  */
+typedef struct kmpc_shared_vars_t {             /*  aligned during dynamic allocation */
+    kmpc_task_queue_t         *sv_queue;
+    /*  (pointers to) shared vars  */
+} kmpc_shared_vars_t;
+
+
+KMP_EXPORT kmp_int32
+__kmpc_omp_task( ident_t *loc_ref, kmp_int32 gtid, kmp_task_t * new_task );
+KMP_EXPORT kmp_task_t*
+__kmpc_omp_task_alloc( ident_t *loc_ref, kmp_int32 gtid, kmp_int32 flags,
+                       size_t sizeof_kmp_task_t, size_t sizeof_shareds,
+                       kmp_routine_entry_t task_entry );
+KMP_EXPORT void
+__kmpc_omp_task_begin_if0( ident_t *loc_ref, kmp_int32 gtid, kmp_task_t * task );
+KMP_EXPORT void
+__kmpc_omp_task_complete_if0( ident_t *loc_ref, kmp_int32 gtid, kmp_task_t *task );
+KMP_EXPORT kmp_int32
+__kmpc_omp_task_parts( ident_t *loc_ref, kmp_int32 gtid, kmp_task_t * new_task );
+KMP_EXPORT kmp_int32
+__kmpc_omp_taskwait( ident_t *loc_ref, kmp_int32 gtid );
+
+KMP_EXPORT kmp_int32
+__kmpc_omp_taskyield( ident_t *loc_ref, kmp_int32 gtid, int end_part );
+
+#if TASK_UNUSED
+void __kmpc_omp_task_begin( ident_t *loc_ref, kmp_int32 gtid, kmp_task_t * task );
+void __kmpc_omp_task_complete( ident_t *loc_ref, kmp_int32 gtid, kmp_task_t *task );
+#endif // TASK_UNUSED
+
+/* ------------------------------------------------------------------------ */
+
+#if OMP_40_ENABLED
+
+KMP_EXPORT void __kmpc_taskgroup( ident_t * loc, int gtid );
+KMP_EXPORT void __kmpc_end_taskgroup( ident_t * loc, int gtid );
+
+KMP_EXPORT kmp_int32 __kmpc_omp_task_with_deps ( ident_t *loc_ref, kmp_int32 gtid, kmp_task_t * new_task,
+                                                 kmp_int32 ndeps, kmp_depend_info_t *dep_list,
+                                                 kmp_int32 ndeps_noalias, kmp_depend_info_t *noalias_dep_list );
+KMP_EXPORT void __kmpc_omp_wait_deps ( ident_t *loc_ref, kmp_int32 gtid, kmp_int32 ndeps, kmp_depend_info_t *dep_list,
+                                          kmp_int32 ndeps_noalias, kmp_depend_info_t *noalias_dep_list );
+extern void __kmp_release_deps ( kmp_int32 gtid, kmp_taskdata_t *task );
+
+extern kmp_int32 __kmp_omp_task( kmp_int32 gtid, kmp_task_t * new_task, bool serialize_immediate );
+
+KMP_EXPORT kmp_int32 __kmpc_cancel(ident_t* loc_ref, kmp_int32 gtid, kmp_int32 cncl_kind);
+KMP_EXPORT kmp_int32 __kmpc_cancellationpoint(ident_t* loc_ref, kmp_int32 gtid, kmp_int32 cncl_kind);
+KMP_EXPORT kmp_int32 __kmpc_cancel_barrier(ident_t* loc_ref, kmp_int32 gtid);
+KMP_EXPORT int __kmp_get_cancellation_status(int cancel_kind);
+
+#if OMP_45_ENABLED
+
+KMP_EXPORT void __kmpc_proxy_task_completed( kmp_int32 gtid, kmp_task_t *ptask );
+KMP_EXPORT void __kmpc_proxy_task_completed_ooo ( kmp_task_t *ptask );
+KMP_EXPORT void __kmpc_taskloop(ident_t *loc, kmp_int32 gtid, kmp_task_t *task, kmp_int32 if_val,
+                kmp_uint64 *lb, kmp_uint64 *ub, kmp_int64 st,
+                kmp_int32 nogroup, kmp_int32 sched, kmp_uint64 grainsize, void * task_dup );
+#endif
+#endif
 
 #endif // libiomp_h_INCLUDED
 
