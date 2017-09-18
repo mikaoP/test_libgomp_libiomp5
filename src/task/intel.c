@@ -27,23 +27,23 @@ static void foo1(int *a, int *b, int *c, int *d) {
 	printf("%zx %zx %zx %zx\n", *a, *b, *c, *d);
 }
 
-static void omp_task_foo1_private_map(void *task, int **a, int **b, int **c, int **d) {
+static void omp_task_task1_private_map(void *task, int *a, int *b, int *c, int *d) {
 	struct kmp_task_foo1 *tmp = task;
-	*a = &tmp->p_a;
-	*b = &tmp->p_b;
-	*c = &tmp->p_c;
-	*d = &tmp->p_d;
+	*a = tmp->p_a;
+	*b = tmp->p_b;
+	*c = tmp->p_c;
+	*d = tmp->p_d;
 }
 
 // I am not sure about args...
 static kmp_int32 task1(kmp_int32 thread_num, void *task) {
-	int *p_a;
-	int *p_b;
-	int *p_c;
-	int *p_d;
+	int p_a;
+	int p_b;
+	int p_c;
+	int p_d;
 	//printf("%d = %d\n", thread_num, omp_get_thread_num());
-	omp_task_foo1_private_map(task, &p_a, &p_b, &p_c, &p_d);
-	foo1(p_a, p_b, p_c, p_d);
+	omp_task_task1_private_map(task, &p_a, &p_b, &p_c, &p_d);
+	foo1(&p_a, &p_b, &p_c, &p_d);
 	return 0;
 }
 
