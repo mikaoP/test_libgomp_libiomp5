@@ -1,5 +1,6 @@
-- why __kmpc_dispatch_fini_4 is not used in dynamic loops? where is it used?
-- what ident must be used for each case?
-- in for_reduce intel i made a cast to avoid function declaration (since is kmpc_micro type). is there any better way? 
-- what 'task' function args mean?
-- figure out about private task params
+Q - why __kmpc_dispatch_fini_4 is not used in dynamic loops? where is it used?
+A - in omp ordered loops
+Q - what ident must be used for each case?
+Q - in for_reduce intel i made a cast to avoid function declaration (since is kmpc_micro type). is there any better way?
+Q - what 'task' function args mean?
+Q - figure out about private task params
