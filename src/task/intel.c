@@ -24,7 +24,7 @@ static ident_t loc2 = { .flags = KMP_IDENT_KMPC | KMP_IDENT_BARRIER_IMPL };
 
 static void foo1(int *a, int *b, int *c, int *d) {
 	*a = *b = *c = *d = 0xFF;
-	printf("%zx %zx %zx %zx\n", *a, *b, *c, *d);
+	printf("foo1: Thread #%d %x %x %x %x\n", omp_get_thread_num(), *a, *b, *c, *d);
 }
 
 static void omp_task_task1_private_map(void *task, int *a, int *b, int *c, int *d) {
@@ -48,7 +48,19 @@ static kmp_int32 task1(kmp_int32 thread_num, void *task) {
 }
 
 static void outline_func(kmp_int32 *global_tid, kmp_int32 *bound_tid, int *a, int *b, int *c, int *d) {
+
+	int p_a = *a;
+	int p_b = *b;
+	int p_c = *c;
+	int p_d = *d;
+
+	p_a = p_b = p_c = p_d = omp_get_thread_num();
+
+	// Single does not do copy
 	if (__kmpc_single(&loc1, *global_tid)) {
+
+		p_a = p_b = p_c = p_d = 0xEE;
+
 		struct kmp_task_foo1 *ret1 = (struct kmp_task_foo1 *)__kmpc_omp_task_alloc(&loc1,
                                                          *global_tid,
                                                          TASK_EXPLICIT,
@@ -57,7 +69,7 @@ static void outline_func(kmp_int32 *global_tid, kmp_int32 *bound_tid, int *a, in
                                                          (kmp_routine_entry_t)&task1);
 
 		struct task_shared_args *tmp = (struct task_shared_args *)(ret1->task.shareds);
-		*tmp = (struct task_shared_args) { a, b, c, d };
+		*tmp = (struct task_shared_args) { &p_a, &p_b, &p_c, &p_d };
 
 		ret1->p_a = *(tmp->a);
 		ret1->p_b = *(tmp->b);
@@ -66,10 +78,14 @@ static void outline_func(kmp_int32 *global_tid, kmp_int32 *bound_tid, int *a, in
 
 		__kmpc_omp_task(&loc1, *global_tid, (kmp_task_t *)ret1);
 
+		usleep(100);
+
+		printf("After task: Thread #%d %x %x %x %x\n", omp_get_thread_num(), p_a, p_b, p_c, p_d);
+
 		__kmpc_end_single(&loc1, *global_tid);
 	}
 	__kmpc_barrier(&loc2, *global_tid);
-	printf("%zx %zx %zx %zx\n", *a, *b, *c, *d);
+	printf("After single: Thread #%d %x %x %x %x\n", omp_get_thread_num(), p_a, p_b, p_c, p_d);
 }
 
 int main(void) {
@@ -83,4 +99,6 @@ int main(void) {
 	__kmpc_fork_call(&loc1, 4, (kmpc_micro)outline_func, &a, &b, &c, &d);
 
 	__kmpc_end(&loc1);
+
+	printf("Thread #%d %zx %zx %zx %zx\n", omp_get_thread_num(), a, b, c, d);
 }
