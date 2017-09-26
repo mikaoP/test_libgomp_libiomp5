@@ -1,10 +1,22 @@
 #ifndef libiomp_h_INCLUDED
 #define libiomp_h_INCLUDED
 
+#include <stdbool.h>
+
+#define OMP_40_ENABLED 1
+#define OMP_45_ENABLED 1
+
+
 #define KMP_EXPORT     extern  /* export declaration in guide libraries */
 
-typedef unsigned int kmp_uint32;
-typedef int kmp_int32;
+typedef char               kmp_int8;
+typedef unsigned char      kmp_uint8;
+typedef short              kmp_int16;
+typedef unsigned short     kmp_uint16;
+typedef int                kmp_int32;
+typedef unsigned int       kmp_uint32;
+typedef long long          kmp_int64;
+typedef unsigned long long kmp_uint64;
 typedef void (*kmpc_micro)              ( kmp_int32 * global_tid, kmp_int32 * bound_tid, ... );
 
 typedef kmp_uint32 kmp_lock_flags_t;
@@ -391,6 +403,230 @@ void __kmpc_omp_task_complete( ident_t *loc_ref, kmp_int32 gtid, kmp_task_t *tas
 /* ------------------------------------------------------------------------ */
 
 #if OMP_40_ENABLED
+
+typedef long             kmp_intptr_t;
+typedef unsigned long    kmp_uintptr_t;
+
+/* ------------------------------------------------------------------------ */
+// OpenMP tasking data structures
+//
+
+typedef union  kmp_team      kmp_team_t;
+typedef struct kmp_taskdata  kmp_taskdata_t;
+typedef union  kmp_task_team kmp_task_team_t;
+typedef union  kmp_team      kmp_team_p;
+typedef union  kmp_info      kmp_info_p;
+typedef union  kmp_root      kmp_root_p;
+
+typedef enum kmp_proc_bind_t {
+    proc_bind_false = 0,
+    proc_bind_true,
+    proc_bind_master,
+    proc_bind_close,
+    proc_bind_spread,
+    proc_bind_intel,    // use KMP_AFFINITY interface
+    proc_bind_default
+} kmp_proc_bind_t;
+
+/* Type to keep runtime schedule set via OMP_SCHEDULE or omp_set_schedule() */
+typedef struct kmp_r_sched {
+    enum sched_type r_sched_type;
+    int             chunk;
+} kmp_r_sched_t;
+
+typedef struct kmp_internal_control {
+    int           serial_nesting_level;  /* corresponds to the value of the th_team_serialized field */
+    kmp_int8      nested;                /* internal control for nested parallelism (per thread) */
+    kmp_int8      dynamic;               /* internal control for dynamic adjustment of threads (per thread) */
+    kmp_int8      bt_set;                /* internal control for whether blocktime is explicitly set */
+    int           blocktime;             /* internal control for blocktime */
+    int           bt_intervals;          /* internal control for blocktime intervals */
+    int           nproc;                 /* internal control for #threads for next parallel region (per thread) */
+    int           max_active_levels;     /* internal control for max_active_levels */
+    kmp_r_sched_t sched;                 /* internal control for runtime schedule {sched,chunk} pair */
+#if OMP_40_ENABLED
+    kmp_proc_bind_t proc_bind;           /* internal control for affinity  */
+#endif // OMP_40_ENABLED
+    struct kmp_internal_control *next;
+} kmp_internal_control_t;
+
+typedef enum kmp_tasking_mode {
+    tskm_immediate_exec = 0,
+    tskm_extra_barrier = 1,
+    tskm_task_teams = 2,
+    tskm_max = 2
+} kmp_tasking_mode_t;
+
+extern kmp_tasking_mode_t __kmp_tasking_mode;         /* determines how/when to execute tasks */
+extern kmp_int32 __kmp_task_stealing_constraint;
+#if OMP_45_ENABLED
+    extern kmp_int32 __kmp_max_task_priority; // Set via OMP_MAX_TASK_PRIORITY if specified, defaults to 0 otherwise
+#endif
+
+/* NOTE: kmp_taskdata_t and kmp_task_t structures allocated in single block with taskdata first */
+#define KMP_TASK_TO_TASKDATA(task)     (((kmp_taskdata_t *) task) - 1)
+#define KMP_TASKDATA_TO_TASK(taskdata) (kmp_task_t *) (taskdata + 1)
+
+// The tt_found_tasks flag is a signal to all threads in the team that tasks were spawned and
+// queued since the previous barrier release.
+#define KMP_TASKING_ENABLED(task_team) \
+    (TCR_SYNC_4((task_team)->tt.tt_found_tasks) == TRUE)
+/*!
+@ingroup BASIC_TYPES
+@{
+*/
+
+/*!
+ */
+typedef kmp_int32 (* kmp_routine_entry_t)( kmp_int32, void * );
+
+#if OMP_40_ENABLED
+typedef struct kmp_taskgroup {
+    kmp_uint32            count;   // number of allocated and not yet complete tasks
+    kmp_int32             cancel_request; // request for cancellation of this taskgroup
+    struct kmp_taskgroup *parent;  // parent taskgroup
+} kmp_taskgroup_t;
+
+
+// forward declarations
+typedef union kmp_depnode       kmp_depnode_t;
+typedef struct kmp_depnode_list  kmp_depnode_list_t;
+typedef struct kmp_dephash_entry kmp_dephash_entry_t;
+
+typedef struct kmp_depend_info {
+     kmp_intptr_t               base_addr;
+     size_t                     len;
+     struct {
+         bool                   in:1;
+         bool                   out:1;
+     } flags;
+} kmp_depend_info_t;
+
+struct kmp_depnode_list {
+   kmp_depnode_t *              node;
+   kmp_depnode_list_t *         next;
+};
+
+typedef struct kmp_base_depnode {
+    kmp_depnode_list_t        * successors;
+    kmp_task_t                * task;
+
+    kmp_lock_t                  lock;
+
+#if KMP_SUPPORT_GRAPH_OUTPUT
+    kmp_uint32                  id;
+#endif
+
+    volatile kmp_int32          npredecessors;
+    volatile kmp_int32          nrefs;
+} kmp_base_depnode_t;
+
+union KMP_ALIGN_CACHE kmp_depnode {
+    double          dn_align;        /* use worst case alignment */
+    char            dn_pad[ KMP_PAD(kmp_base_depnode_t, CACHE_LINE) ];
+    kmp_base_depnode_t dn;
+};
+
+struct kmp_dephash_entry {
+    kmp_intptr_t               addr;
+    kmp_depnode_t            * last_out;
+    kmp_depnode_list_t       * last_ins;
+    kmp_dephash_entry_t      * next_in_bucket;
+};
+
+typedef struct kmp_dephash {
+   kmp_dephash_entry_t     ** buckets;
+   size_t		      size;
+#ifdef KMP_DEBUG
+   kmp_uint32                 nelements;
+   kmp_uint32                 nconflicts;
+#endif
+} kmp_dephash_t;
+
+#endif
+
+#ifdef BUILD_TIED_TASK_STACK
+
+/* Tied Task stack definitions */
+typedef struct kmp_stack_block {
+    kmp_taskdata_t *          sb_block[ TASK_STACK_BLOCK_SIZE ];
+    struct kmp_stack_block *  sb_next;
+    struct kmp_stack_block *  sb_prev;
+} kmp_stack_block_t;
+
+typedef struct kmp_task_stack {
+    kmp_stack_block_t         ts_first_block;  // first block of stack entries
+    kmp_taskdata_t **         ts_top;          // pointer to the top of stack
+    kmp_int32                 ts_entries;      // number of entries on the stack
+} kmp_task_stack_t;
+
+#endif // BUILD_TIED_TASK_STACK
+
+typedef struct kmp_tasking_flags {          /* Total struct must be exactly 32 bits */
+    /* Compiler flags */                    /* Total compiler flags must be 16 bits */
+    unsigned tiedness    : 1;               /* task is either tied (1) or untied (0) */
+    unsigned final       : 1;               /* task is final(1) so execute immediately */
+    unsigned merged_if0  : 1;               /* no __kmpc_task_{begin/complete}_if0 calls in if0 code path */
+#if OMP_40_ENABLED
+    unsigned destructors_thunk : 1;         /* set if the compiler creates a thunk to invoke destructors from the runtime */
+#if OMP_45_ENABLED
+    unsigned proxy       : 1;               /* task is a proxy task (it will be executed outside the context of the RTL) */
+    unsigned priority_specified :1;         /* set if the compiler provides priority setting for the task */
+    unsigned reserved    : 10;              /* reserved for compiler use */
+#else
+    unsigned reserved    : 12;              /* reserved for compiler use */
+#endif
+#else // OMP_40_ENABLED
+    unsigned reserved    : 13;              /* reserved for compiler use */
+#endif // OMP_40_ENABLED
+
+    /* Library flags */                     /* Total library flags must be 16 bits */
+    unsigned tasktype    : 1;               /* task is either explicit(1) or implicit (0) */
+    unsigned task_serial : 1;               /* this task is executed immediately (1) or deferred (0) */
+    unsigned tasking_ser : 1;               /* all tasks in team are either executed immediately (1) or may be deferred (0) */
+    unsigned team_serial : 1;               /* entire team is serial (1) [1 thread] or parallel (0) [>= 2 threads] */
+                                            /* If either team_serial or tasking_ser is set, task team may be NULL */
+    /* Task State Flags: */
+    unsigned started     : 1;               /* 1==started, 0==not started     */
+    unsigned executing   : 1;               /* 1==executing, 0==not executing */
+    unsigned complete    : 1;               /* 1==complete, 0==not complete   */
+    unsigned freed       : 1;               /* 1==freed, 0==allocateed        */
+    unsigned native      : 1;               /* 1==gcc-compiled task, 0==intel */
+    unsigned reserved31  : 7;               /* reserved for library use */
+
+} kmp_tasking_flags_t;
+
+
+struct kmp_taskdata {                                 /* aligned during dynamic allocation       */
+    kmp_int32               td_task_id;               /* id, assigned by debugger                */
+    kmp_tasking_flags_t     td_flags;                 /* task flags                              */
+    kmp_team_t *            td_team;                  /* team for this task                      */
+    kmp_info_p *            td_alloc_thread;          /* thread that allocated data structures   */
+                                                      /* Currently not used except for perhaps IDB */
+    kmp_taskdata_t *        td_parent;                /* parent task                             */
+    kmp_int32               td_level;                 /* task nesting level                      */
+    kmp_int32               td_untied_count;          /* untied task active parts counter        */
+    ident_t *               td_ident;                 /* task identifier                         */
+                            // Taskwait data.
+    ident_t *               td_taskwait_ident;
+    kmp_uint32              td_taskwait_counter;
+    kmp_int32               td_taskwait_thread;       /* gtid + 1 of thread encountered taskwait */
+    KMP_ALIGN_CACHE kmp_internal_control_t  td_icvs;  /* Internal control variables for the task */
+    KMP_ALIGN_CACHE volatile kmp_uint32 td_allocated_child_tasks;  /* Child tasks (+ current task) not yet deallocated */
+    volatile kmp_uint32     td_incomplete_child_tasks; /* Child tasks not yet complete */
+#if OMP_40_ENABLED
+    kmp_taskgroup_t *       td_taskgroup;         // Each task keeps pointer to its current taskgroup
+    kmp_dephash_t *         td_dephash;           // Dependencies for children tasks are tracked from here
+    kmp_depnode_t *         td_depnode;           // Pointer to graph node if this task has dependencies
+#endif
+#if OMPT_SUPPORT
+    ompt_task_info_t        ompt_task_info;
+#endif
+#if OMP_45_ENABLED
+    kmp_task_team_t *       td_task_team;
+    kmp_int32               td_size_alloc;        // The size of task structure, including shareds etc.
+#endif
+}; // struct kmp_taskdata
 
 KMP_EXPORT void __kmpc_taskgroup( ident_t * loc, int gtid );
 KMP_EXPORT void __kmpc_end_taskgroup( ident_t * loc, int gtid );
