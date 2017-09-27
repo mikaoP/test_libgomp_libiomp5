@@ -4,3 +4,4 @@ Q - what ident must be used for each case?
 Q - in for_reduce intel i made a cast to avoid function declaration (since is kmpc_micro type). is there any better way?
 Q - what 'task' function args mean?
 Q - figure out about private task params
+Q - figure out why taskloop makes private vars and NOT shared, like #pragma omp task does
