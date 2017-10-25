@@ -1,4 +1,4 @@
-CFLAGS  = -m32 -std=c11
+CFLAGS  = -ggdb3 -std=c11
 LDFLAGS = -Lintel_rt/lib
 LDLIBS  = -liomp5
 SOURCE_INTEL = $(shell find src -name "intel.c")
