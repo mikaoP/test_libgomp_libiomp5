@@ -628,6 +628,36 @@ struct kmp_taskdata {                                 /* aligned during dynamic 
 #endif
 }; // struct kmp_taskdata
 
+typedef struct kmp_task_red_flags {
+    unsigned lazy_priv : 1;     // hint: (1) use lazy allocation (big objects)
+    unsigned reserved31 : 31;
+} kmp_task_red_flags_t;
+
+// internal structure for reduction data item related info
+typedef struct kmp_task_red_data {
+    void *reduce_shar;          // shared reduction item
+    size_t reduce_size;         // size of data item
+    void *reduce_priv;          // thread specific data
+    void *reduce_pend;          // end of private data for comparison op
+    void *reduce_init;          // data initialization routine
+    void *reduce_fini;          // data finalization routine
+    void *reduce_comb;          // data combiner routine
+    kmp_task_red_flags_t flags; // flags for additional info from compiler
+} kmp_task_red_data_t;
+
+// structure sent us by compiler - one per reduction item
+typedef struct kmp_task_red_input {
+    void *reduce_shar;          // shared reduction item
+    size_t reduce_size;         // size of data item
+    void *reduce_init;          // data initialization routine
+    void *reduce_fini;          // data finalization routine
+    void *reduce_comb;          // data combiner routine
+    kmp_task_red_flags_t flags; // flags for additional info from compiler
+} kmp_task_red_input_t;
+
+KMP_EXPORT void *__kmpc_task_reduction_init(int gtid, int num_data, void *data);
+KMP_EXPORT void *__kmpc_task_reduction_get_th_data(int gtid, void *tg, void *d);
+
 KMP_EXPORT void __kmpc_taskgroup( ident_t * loc, int gtid );
 KMP_EXPORT void __kmpc_end_taskgroup( ident_t * loc, int gtid );
 
